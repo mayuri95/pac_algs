@@ -68,7 +68,7 @@ def calc_r(train_x):
     return max_l2_norm
 
 def rand_mechanism_noise(train_x, train_y, mechanism, subsample_rate, tau, num_classes, regularize=False, tree_depth=None,
-    num_trees=None, num_dims=None, prefix=None, max_mi = 1., sec_c = 0.001):
+    num_trees=None, num_dims=None, prefix=None, max_mi = 1., sec_c = 1e-6):
     v = max_mi / 2.
     r = calc_r(train_x)
     gamma = 0.01
@@ -80,8 +80,10 @@ def rand_mechanism_noise(train_x, train_y, mechanism, subsample_rate, tau, num_c
     train_y = [(train_y[k], k) for k in range(len(train_y))]
 
     for trial in range(num_trials):
+        print(f'trial {trial}')
         assert subsample_rate >= num_classes
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
+        print(shuffled_x1[0])
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate, ordered=True)
 
         indices = [k[1] for k in shuffled_y1.argsort(axis=0)]

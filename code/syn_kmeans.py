@@ -37,8 +37,9 @@ syn_noise = {}
 syn_acc = {}
 
 for mi in mi_range:
-    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes)[2]
+    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes, max_mi=mi)[2]
     syn_noise[mi] = est_noise
+    print(f'mi={mi}')
 with open(f'data_0120/kmeans_syn_noise_big={big}.pkl', 'wb') as f:
     pickle.dump(syn_noise, f)
 print('syn noise complete')

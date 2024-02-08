@@ -22,12 +22,7 @@ from itertools import product
 from algs_lib import *
 import sys
 
-big = eval(sys.argv[1])
-if big:
-    mi_range = [4.0, 2.0, 1.0, 0.5]
-else:
-    mi_range = [0.25, 0.125, 0.0625, 0.03125, 0.015625]
-print(f"BIG={big}")
+mi_range = [4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625]
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_rice(normalize=True)
 
@@ -37,14 +32,15 @@ rice_noise = {}
 rice_acc = {}
 
 for mi in mi_range:
-    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes)[2]
+    print(f"MI={mi}")
+    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes, max_mi=mi)[2]
     rice_noise[mi] = est_noise
-with open(f'data_0120/kmeans_rice_noise_big={big}.pkl', 'wb') as f:
-    pickle.dump(rice_noise, f)
-print('rice noise complete')
+
+    with open(f'data_0120/kmeans_rice_noise_mi={mi}.pkl', 'wb') as f:
+        pickle.dump(rice_noise, f)
+    print('rice noise complete')
 
 
-for mi in mi_range:
     rice_num_features = len(train_x[0])
     num_trials = 1000
 
@@ -75,9 +71,9 @@ for mi in mi_range:
     avg_orig_acc = np.mean(orig_accs)
     priv_acc_var = np.var(priv_accs)
     avg_priv_acc = np.mean(priv_accs)
-    
+
     rice_acc[mi] = (avg_orig_acc, orig_acc_var, avg_priv_acc, priv_acc_var)
 
-with open(f'data_0120/kmeans_rice_acc_big={big}.pkl', 'wb') as f:
-    pickle.dump(rice_acc, f)
-print(mi, rice_acc)
+    with open(f'data_0120/kmeans_rice_acc_mi={mi}.pkl', 'wb') as f:
+        pickle.dump(rice_acc, f)
+    print(mi, rice_acc)

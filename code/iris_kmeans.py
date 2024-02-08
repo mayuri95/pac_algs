@@ -37,7 +37,7 @@ iris_noise = {}
 iris_acc = {}
 
 for mi in mi_range:
-    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes)[2]
+    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes, max_mi=mi)[2]
     iris_noise[mi] = est_noise
 with open(f'data_0120/iris_kmeans_big={big}_noise.pkl', 'wb') as f:
     pickle.dump(iris_noise, f)

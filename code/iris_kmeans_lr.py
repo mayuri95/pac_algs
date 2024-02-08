@@ -22,11 +22,9 @@ from itertools import product
 from algs_lib import *
 import sys
 
-noise_dicts = {4.0: 0.05749397913745031, 1.0: 0.05861768660841647, 0.25: 0.13931298872701633, 0.0625: 0.1370552116845034, 0.015625: 0.12594080321957227}
-mi = 1./float(sys.argv[1])
-print(mi)
+noise_dicts = {4.0: 0.021146445928720614, 1.0: 0.08654120411176264, 0.25: 0.3934787912544739, 0.0625: 1.4441306392548816, 0.015625: 5.626512931760365}
 
-noise_val = noise_dicts[mi]
+
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_iris(normalize=True)
 
 num_features = len(train_x[0])
@@ -35,12 +33,13 @@ subsample_rate = int(0.5*train_len)
 
 
 num_trials = 1000
-tpr = {}
-fpr = {}
 
 thresholds = [i / 100. for i in range(0, 101, 5)]
-
-for add_noise in [True]:
+add_noise = True
+for mi in noise_dicts:
+    tpr = {}
+    fpr = {}
+    noise_val = noise_dicts[mi]
     for trial_ind in range(num_trials):
         print(f'trial {trial_ind}')
         test_ind = np.random.choice(range(train_len))

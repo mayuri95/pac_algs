@@ -2,3 +2,5 @@
 .DS_Store
 .ipynb_checkpoints
 __pycache__/
+code/data_0120/
+code/test_lr_noise/

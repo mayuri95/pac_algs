@@ -41,7 +41,7 @@ for mi in mi_range:
         noise = {}
         est_noise =  rand_mechanism_noise(train_x, train_y, fit_forest, subsample_rate, num_classes = num_classes,
                                      num_trees = num_trees, tree_depth=tree_depth, regularize=reg, tau=3,
-                                     prefix='data_1129/iris_')[2]
+                                     prefix='data_1129/iris_', max_mi=mi)[2]
         noise[reg] = est_noise
         print(f'iris noise {est_noise}')
 
