@@ -181,6 +181,130 @@ def rand_mechanism_noise(train_x, train_y, mechanism, subsample_rate, tau, num_c
 
     return (avg_dist, c, avg_cov_norm)
 
+def rand_mechanism_noise_auto(train_x, train_y, mechanism, subsample_rate, tau, num_classes, eta, regularize=False, tree_depth=None,
+    num_trees=None, num_dims=None, prefix=None, max_mi = 1., sec_c = 1e-6):
+    v = max_mi / 2.
+    r = calc_r(train_x)
+    gamma = 0.01
+    c = sec_c
+    avg_dist = 0.
+    converged = False
+    current_est = None
+    
+    ys = []
+    train_y = [(train_y[k], k) for k in range(len(train_y))]
+    curr_trial = 0
+
+    while not converged:
+
+        print(f'trial {curr_trial}')
+        assert subsample_rate >= num_classes
+        shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
+        shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate, ordered=True)
+
+        indices = [k[1] for k in shuffled_y1.argsort(axis=0)]
+
+        shuffled_x1 = shuffled_x1[indices]
+        shuffled_y1 = shuffled_y1[indices]
+        
+        shuffled_y1 = np.array([k[0] for k in shuffled_y1])
+
+        shuffled_x2, shuffled_y2 = shuffle(train_x, train_y)
+        shuffled_x2, shuffled_y2 = get_samples_safe(shuffled_x2, shuffled_y2, num_classes, subsample_rate, ordered=True)
+
+        indices = [k[1] for k in shuffled_y2.argsort(axis=0)]
+
+        shuffled_x2 = shuffled_x2[indices]
+        shuffled_y2 = shuffled_y2[indices]
+        shuffled_y2 = np.array([k[0] for k in shuffled_y2])
+        
+        seeds = list(range(tau))
+        
+        
+        if mechanism == run_kmeans:
+            y_1 = [mechanism(shuffled_x1, shuffled_y1, num_classes, seeds[i])[1] for i in range(len(seeds))]
+            y_2 = [mechanism(shuffled_x2, shuffled_y2, num_classes, seeds[i])[1] for i in range(len(seeds))]
+        
+        if mechanism == run_svm:
+            y_1 = [mechanism(shuffled_x1, shuffled_y1, num_classes, seeds[i], regularize)[1] for i in range(len(seeds))]
+            y_2 = [mechanism(shuffled_x2, shuffled_y2, num_classes, seeds[i], regularize)[1] for i in range(len(seeds))]
+
+        if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
+            assert num_trees is not None
+            y_1 = [mechanism(shuffled_x1, shuffled_y1, num_trees, tree_depth, seeds[i], regularize)[1] for i in range(len(seeds))]
+            y_2 = [mechanism(shuffled_x2, shuffled_y2, num_trees, tree_depth, seeds[i], regularize)[1] for i in range(len(seeds))]
+
+        if mechanism.__name__ == 'run_pca':
+            assert num_dims is not None
+            y_1 = [mechanism(shuffled_x1, shuffled_y1, num_dims)[1] for i in range(len(seeds))]
+            y_2 = [mechanism(shuffled_x2, shuffled_y2, num_dims)[1] for i in range(len(seeds))]
+            ordered_y1 = []
+            ordered_y2 = []
+            for ind in range(len(y_1)):
+                dist = 0.
+                s1 = y_1[ind]
+                s2 = y_2[ind]
+                ordered_y1.append(s1.flatten())
+                    
+
+                s_1 = copy.deepcopy(s1)
+                s_2 = copy.deepcopy(s2)
+
+                u_a, s_a, v_a = np.linalg.svd(s_1)
+                u_b, s_b, v_b = np.linalg.svd(s_2)
+
+                c_mat = np.matmul(v_a, np.transpose(v_b))
+
+                end_shape = s2.shape[0]
+                c_trunc = c_mat[:end_shape, :end_shape]
+                transformed_s2 = np.matmul(c_trunc, s2)
+
+                for i in range(len(s2)):
+                    orig_dist = np.linalg.norm(s2[i] - s1[i])
+                    neg_dist = np.linalg.norm(-1*s2[i] - s1[i])
+                    if neg_dist < orig_dist:
+                        s2[i] *= -1
+                s2 = s2.flatten()
+                ordered_y2.append(s2)
+            y_1 = copy.deepcopy(ordered_y1)
+            y_2 = copy.deepcopy(ordered_y2)
+
+
+        elif mechanism != fit_forest and mechanism != fit_gbdt and mechanism != run_pca:
+            # solve LP for optimal assignments
+            C = distance.cdist(y_1, y_2)
+            assignment = linear_sum_assignment(C)
+            # sort by order of first cluster, so those values remain stable
+            arr = np.dstack(assignment)[0]
+            arr = arr[arr[:, 0].argsort()]
+            sorted_ids = arr[:, 1]
+            y_2 = np.array([y_2[sorted_ids[j]] for j in range(len(sorted_ids))])
+
+
+        dist = 0.
+
+        for ind in range(tau):
+            dist += np.linalg.norm(np.array(y_1[ind]) - np.array(y_2[ind]))**2 / tau
+        avg_dist += dist
+
+        if curr_trial % 10 == 0:        
+            if current_est is None:
+                current_est = avg_dist / curr_trial
+            else:
+                print(f'else reached with {abs(avg_dist - current_est)}, {eta}')
+                if abs(avg_dist / curr_trial - current_est) < eta:
+                    converged = True
+                current_est = avg_dist / curr_trial
+        curr_trial += 1
+        # print(curr_trial, abs(current_est - avg_dist))
+    
+    # avg_dist /= curr_trial
+
+    avg_cov_norm = (avg_dist + c) / (2*v)
+    
+
+    return (avg_dist, c, avg_cov_norm)
+
 def rand_mechanism_individual_noise(train_x, train_y, mechanism, subsample_rate, tau, num_classes, index, regularize=False, tree_depth=None,
     num_trees=None, prefix=None, max_mi = 1.):
     v = max_mi / 2.
@@ -280,6 +404,252 @@ def calc_cov_small_gap(d, c, v, eigs):
     multiplier = sum(eigs) + d*c
     multiplier /= (2*v)
     return multiplier*identity
+
+def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 1.):
+
+    sec_v = max_mi / 2
+    sec_beta = max_mi - sec_v
+    r = calc_r(train_x)
+    gamma = 0.01
+    avg_dist = 0.
+    curr_est = None
+    converged = False
+    curr_trial = 0
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+
+    est_y = {}
+    prev_ests = None
+    # 10*c*v
+    seed = np.random.randint(1, 100000)
+
+    while not converged:
+        shuffled_x, shuffled_y = shuffle(train_x, train_y)
+        
+        
+        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+
+        if mechanism == run_kmeans:
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed)[1]
+
+        if mechanism == run_svm:
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
+
+        if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
+            assert num_trees is not None
+            assert tree_depth is not None
+            output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
+
+    
+        for ind in range(len(output)):
+            if ind not in est_y:
+                est_y[ind] = []
+            est_y[ind].append(output[ind])
+
+        if curr_trial % 10 == 0:        
+            if prev_ests is None:
+                prev_ests = {}
+                for ind in est_y:
+                    prev_ests[ind] = np.var(est_y[ind])
+            else:
+                converged = True
+                for ind in est_y:
+                    if abs(np.var(est_y[ind]) - prev_ests[ind]) > eta:
+                        converged = False
+                if not converged:
+                    for ind in est_y:
+                        prev_ests[ind] = np.var(est_y[ind])
+        curr_trial += 1
+    fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
+
+    noise = {}
+    sqrt_total_var = sum(fin_var.values())**0.5
+    for ind in fin_var:
+        noise[ind] = 1./max_mi**0.5 * fin_var[ind]**0.5 * sqrt_total_var
+    return noise
+
+
+def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classes,
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 1., proj_matrix = None):
+    
+    sec_v = max_mi / 2
+    sec_beta = max_mi - sec_v
+    r = calc_r(train_x)
+    gamma = 0.01
+    avg_dist = 0.
+    curr_est = None
+    converged = False
+    curr_trial = 0
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+
+    est_y = {}
+    prev_ests = None
+    # 10*c*v
+    seed = np.random.randint(1, 100000)
+
+    if proj_matrix is None:
+        outputs = []
+        for _ in range(100):
+            shuffled_x, shuffled_y = shuffle(train_x, train_y)
+            
+            
+            shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+
+            if mechanism == run_kmeans:
+                output = mechanism(shuffled_x, shuffled_y, num_classes, seed)[1]
+
+            if mechanism == run_svm:
+                output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
+
+            if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
+                assert num_trees is not None
+                assert tree_depth is not None
+                output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
+
+            outputs.append(output)
+        y_cov = np.cov(np.array(outputs).T)  
+        
+        u, eigs, u_t = np.linalg.svd(y_cov)
+        proj_matrix = u
+
+
+    while not converged:
+        shuffled_x, shuffled_y = shuffle(train_x, train_y)
+        
+        
+        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+
+        if mechanism == run_kmeans:
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed)[1]
+
+        if mechanism == run_svm:
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
+
+        if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
+            assert num_trees is not None
+            assert tree_depth is not None
+            output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
+
+    
+        for ind in range(len(output)):
+            if ind not in est_y:
+                est_y[ind] = []
+            est_y[ind].append(np.matmul(proj_matrix[ind].T, np.array(output).T))
+
+        if curr_trial % 10 == 0:        
+            if prev_ests is None:
+                prev_ests = {}
+                for ind in est_y:
+                    prev_ests[ind] = np.var(est_y[ind])
+            else:
+                converged = True
+                for ind in est_y:
+                    if abs(np.var(est_y[ind]) - prev_ests[ind]) > eta:
+                        converged = False
+                if not converged:
+                    for ind in est_y:
+                        prev_ests[ind] = np.var(est_y[ind])
+        curr_trial += 1
+    fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
+    # print(f"fin_var is {fin_var}")
+
+    noise = {}
+    sqrt_total_var = sum(fin_var.values())**0.5
+    for ind in fin_var:
+        noise[ind] = 1./max_mi**0.5 * fin_var[ind]**0.5 * sqrt_total_var
+
+    sigma_mat = np.zeros((len(est_y), len(est_y)))
+    for ind in fin_var:
+        sigma_mat[ind][ind] = noise[ind]
+
+    noise = np.matmul(
+        np.matmul(u, sigma_mat), u_t)
+    # print(noise.diagonal())
+    return noise
+
+def det_mechanism_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
+    eta, regularize=None, max_mi = 1.):
+
+    sec_v = max_mi / 2
+    sec_beta = max_mi - sec_v
+    r = calc_r(train_x)
+    gamma = 0.01
+    c = 1e-20
+    num_trials = 1000
+    avg_dist = 0.
+    current_est = None
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+    est_y = []
+    
+
+    seed = np.random.randint(1, 100000)
+
+    for curr_trial in range(num_trials):
+        shuffled_x, shuffled_y = shuffle(train_x, train_y)
+        
+        
+        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+
+        est_y.append(mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1])
+        if curr_trial % 10 == 0:        
+            if current_est is None:
+                current_est = np.linalg.norm(np.cov(np.array(est_y).T)) / curr_trial
+            else:
+                print(f'else reached with {abs(avg_dist - current_est)}, {eta}')
+                avg_cov = np.linalg.norm(np.cov(np.array(est_y).T))
+                if abs(avg_cov / curr_trial - current_est) < eta:
+                    converged = True
+                current_est = avg_cov / curr_trial
+
+    # run_svm(train_x, train_y, num_classes, seed, regularize)
+
+
+    d = len(est_y[0]) # length of flattened vector
+    y_mean = np.average(est_y, axis=0)
+    y_cov = np.cov(np.array(est_y).T)  
+    
+    u, eigs, v = np.linalg.svd(y_cov)
+    
+    j_0 = 0
+    while j_0 < len(eigs) and eigs[j_0] > c:
+        j_0 += 1
+    if j_0 == len(eigs):
+        j_0 -= 1
+    elif eigs[j_0] <= c and j_0 > 0:
+        j_0 -= 1
+    print(f'j0 is {j_0}')
+    # calculate eig_gap
+    min_eig_gap = None
+    for j in range(j_0 + 1):
+        for ind in range(len(eigs)):
+            if j == ind:
+                continue
+            eig_gap = abs(eigs[j] - eigs[ind])
+            if min_eig_gap is None or eig_gap < min_eig_gap:
+                min_eig_gap = eig_gap
+    thresh = r * (d*c)**0.5 + 2*c
+
+    print(min_eig_gap, thresh)
+    # large eigenvalue gap
+    if min_eig_gap > thresh:
+        print('anisotropic reached')
+        cov = calc_cov_large_gap(d, c, sec_v, sec_beta, eigs, u)
+    else:
+        cov = calc_cov_small_gap(d, c, sec_v, eigs)
+    return cov
+
 
 def det_mechanism_noise(train_x, train_y, mechanism, subsample_rate, num_classes, regularize=None, max_mi = 1.):
 
@@ -694,7 +1064,29 @@ class DecisionTree(object):
                 all_nodes[ind].split_condition = (orig_feat, orig_value + np.random.normal(0, scale=noise))
         return all_nodes
 
+    def add_noise_aniso(self, noise, node=None):
+        all_nodes, left_nodes, right_nodes = [], [], []
+        value = []
+        if node is None:
+            node = self.root
+        if hasattr(node, 'left'):
+            left_nodes = self.add_noise_aniso(noise, node.left)
+        if hasattr(node, 'split_condition'):
+            value = [node]
+        if hasattr(node, 'right'):
+            right_nodes = self.add_noise_aniso(noise, node.right)
+        all_nodes.extend(left_nodes)
+        all_nodes.extend(value)
+        all_nodes.extend(right_nodes)
+
+        if node == self.root:
+            assert len(all_nodes) == 2**len(self.ordered_features) - 1
+            for ind in range(len(all_nodes)):
+                orig_feat, orig_value = all_nodes[ind].split_condition
+                all_nodes[ind].split_condition = (orig_feat, orig_value + np.random.normal(0, scale=noise[ind]))
+        return all_nodes
     
+
 class Forest(object):
     
     def __init__(self, trees, train_x, train_y):
@@ -726,6 +1118,12 @@ class Forest(object):
         for i in range(len(self.trees)):
             self.trees[i].add_noise(noise)
         return
+
+    def add_noise_aniso(self, noise):
+        for i in range(len(self.trees)):
+            self.trees[i].add_noise_aniso(noise)
+        return
+
 
 class BoostedTrees(object):
 

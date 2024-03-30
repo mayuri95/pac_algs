@@ -22,19 +22,14 @@ from itertools import product
 from algs_lib import *
 import sys
 
-big = eval(sys.argv[1])
-if big:
-    mi_range = [4.0, 2.0, 1.0, 0.5]
-else:
-    mi_range = [0.25, 0.125, 0.0625, 0.03125, 0.015625]
-print(f"BIG={big}")
-
+mi_range = [4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625]
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_iris(normalize=True)
 
 subsample_rate = int(0.5*train_len)
 
-C_range = [x / 100. for x in range(1, 101)]
+C_range = [x / 100 for x in range(1, 101)]
+
 num_trials = 1000
 
 for mi in mi_range:
@@ -43,8 +38,8 @@ for mi in mi_range:
     for C in C_range:
         print(f"C={C}, mi={mi}")
         
-        est_noise = rand_mechanism_noise(train_x, train_y, run_svm, subsample_rate, tau=3,
-                                         num_classes = num_classes, regularize=C, max_mi=mi)[2]
+        est_noise = hybrid_noise_auto(train_x, train_y, run_svm, subsample_rate, eta=1e-6,
+            num_classes = num_classes, max_mi=mi, regularize=C)
         iris_noise[C] = est_noise
 
         num_features = len(train_x[0])
@@ -60,7 +55,7 @@ for mi in mi_range:
             acc = model.score(test_x, test_y)
             avg_orig_acc += acc
             for ind in range(len(svm_vec)):
-                c = np.random.normal(0, scale=iris_noise[C])
+                c = np.random.normal(0, scale=iris_noise[C][ind])
                 svm_vec[ind] += c
             reshape_val = num_classes
             if num_classes == 2:
@@ -77,8 +72,8 @@ for mi in mi_range:
         iris_acc[C] = (avg_orig_acc, avg_priv_acc)
         print(f'acc={avg_orig_acc}, {avg_priv_acc}')
 
-    with open(f'data_0120/iris_svm_acc_mi={mi}.pkl', 'wb') as f:
+    with open(f'test_data/iris_svm_acc_auto_s=0.5_mi={mi}.pkl', 'wb') as f:
         pickle.dump(iris_acc, f)
         
-    with open(f'data_0120/iris_svm_noise_mi={mi}.pkl', 'wb') as f:
+    with open(f'test_data/iris_svm_noise_auto_s=0.5_mi={mi}.pkl', 'wb') as f:
         pickle.dump(iris_noise, f)

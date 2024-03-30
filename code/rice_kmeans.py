@@ -22,7 +22,7 @@ from itertools import product
 from algs_lib import *
 import sys
 
-mi_range = [4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625]
+mi_range = [4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625]
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_rice(normalize=True)
 
@@ -33,10 +33,11 @@ rice_acc = {}
 
 for mi in mi_range:
     print(f"MI={mi}")
-    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes, max_mi=mi)[2]
+    est_noise = hybrid_noise_auto(train_x, train_y, run_kmeans, subsample_rate, eta=1e-6,
+        num_classes = num_classes, max_mi=mi)
     rice_noise[mi] = est_noise
 
-    with open(f'data_0120/kmeans_rice_noise_mi={mi}.pkl', 'wb') as f:
+    with open(f'test_data/kmeans_rice_noise_mi={mi}.pkl', 'wb') as f:
         pickle.dump(rice_noise, f)
     print('rice noise complete')
 
@@ -57,7 +58,7 @@ for mi in mi_range:
         acc = accuracy_score(test_y, predictions)
         avg_orig_acc += acc
         for ind in range(len(cluster_centers)):
-            c = np.random.normal(0, scale=rice_noise[mi])
+            c = np.random.normal(0, scale=rice_noise[mi][ind])
             cluster_centers[ind] += c
         new_centers = np.reshape(cluster_centers, (num_classes, rice_num_features))
         model.cluster_centers_ = new_centers
@@ -74,6 +75,6 @@ for mi in mi_range:
 
     rice_acc[mi] = (avg_orig_acc, orig_acc_var, avg_priv_acc, priv_acc_var)
 
-    with open(f'data_0120/kmeans_rice_acc_mi={mi}.pkl', 'wb') as f:
-        pickle.dump(rice_acc, f)
-    print(mi, rice_acc)
+with open(f'test_data/kmeans_rice_auto_s=0.5_acc.pkl', 'wb') as f:
+    pickle.dump(rice_acc, f)
+print(mi, rice_acc)

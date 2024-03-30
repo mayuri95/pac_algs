@@ -22,12 +22,7 @@ from itertools import product
 from algs_lib import *
 import sys
 
-big = eval(sys.argv[1])
-if big:
-    mi_range = [4.0, 2.0, 1.0, 0.5]
-else:
-    mi_range = [0.25, 0.125, 0.0625, 0.03125, 0.015625]
-print(f"BIG={big}")
+mi_range = [4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625]
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_synthetic(normalize=True)
 
@@ -37,10 +32,11 @@ syn_noise = {}
 syn_acc = {}
 
 for mi in mi_range:
-    est_noise = rand_mechanism_noise(train_x, train_y, run_kmeans, subsample_rate, tau=3, num_classes = num_classes, max_mi=mi)[2]
+    est_noise = hybrid_noise_auto(train_x, train_y, run_kmeans, subsample_rate, eta=1e-6,
+        num_classes = num_classes, max_mi=mi)
     syn_noise[mi] = est_noise
     print(f'mi={mi}')
-with open(f'data_0120/kmeans_syn_noise_big={big}.pkl', 'wb') as f:
+with open(f'test_data/kmeans_syn_auto_s=0.5_noise.pkl', 'wb') as f:
     pickle.dump(syn_noise, f)
 print('syn noise complete')
 
@@ -62,7 +58,7 @@ for mi in mi_range:
         acc = accuracy_score(test_y, predictions)
         avg_orig_acc += acc
         for ind in range(len(cluster_centers)):
-            c = np.random.normal(0, scale=syn_noise[mi])
+            c = np.random.normal(0, scale=syn_noise[mi][ind])
             cluster_centers[ind] += c
         new_centers = np.reshape(cluster_centers, (num_classes, syn_num_features))
         model.cluster_centers_ = new_centers
@@ -79,6 +75,6 @@ for mi in mi_range:
     
     syn_acc[mi] = (avg_orig_acc, orig_acc_var, avg_priv_acc, priv_acc_var)
 
-with open(f'data_0120/kmeans_syn_acc_big={big}.pkl', 'wb') as f:
+with open(f'test_data/kmeans_syn_auto_s=0.5_acc.pkl', 'wb') as f:
     pickle.dump(syn_acc, f)
 print(mi, syn_acc)

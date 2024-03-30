@@ -19,7 +19,7 @@ from scipy.stats import entropy
 from sklearn import tree
 from sklearn import preprocessing
 from itertools import product
-from algs_lib import *
+from algs_lib_copy import *
 import sys
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_iris(normalize=True)
@@ -39,11 +39,12 @@ for mi in mi_range:
         print(f'regularize = {reg}, mi = {mi}')
 
         noise = {}
-        est_noise =  rand_mechanism_noise(train_x, train_y, fit_forest, subsample_rate, num_classes = num_classes,
-                                     num_trees = num_trees, tree_depth=tree_depth, regularize=reg, tau=3,
-                                     prefix='data_1129/iris_', max_mi=mi)[2]
+        est_noise = hybrid_noise_auto(train_x, train_y, fit_forest, subsample_rate, eta=1e-3,
+            num_classes = num_classes, max_mi=mi, regularize=reg, num_trees = num_trees, tree_depth=tree_depth)
         noise[reg] = est_noise
         print(f'iris noise {est_noise}')
+        with open(f'test_data/iris_noise_auto_reg={reg}_mi={mi}.pkl', 'wb') as f:
+            pickle.dump(noise, f)    
 
         num_features = len(train_x[0])
         acc_dict = {}
@@ -56,7 +57,7 @@ for mi in mi_range:
             forest, forest_vec = fit_forest(shuffled_x1, shuffled_y1, num_trees, tree_depth, regularize=reg, seed=None)
             acc = forest.calculate_accuracy(test_x, test_y)
             avg_orig_acc += acc
-            forest.add_noise(noise[reg])
+            forest.add_noise_aniso(noise[reg])
             priv_acc = forest.calculate_accuracy(test_x, test_y)
             avg_priv_acc += priv_acc
             
@@ -65,8 +66,5 @@ for mi in mi_range:
         acc_dict[reg] = (avg_orig_acc, avg_priv_acc)
         print(f'iris acc = {(avg_orig_acc, avg_priv_acc)}')
 
-        with open(f'data_0120/iris_noise_reg={reg}_mi={mi}.pkl', 'wb') as f:
-            pickle.dump(noise, f)    
-
-        with open(f'data_0120/iris_acc_reg={reg}_mi={mi}.pkl', 'wb') as f:
+        with open(f'test_data/iris_acc_auto_s=0.25_reg={reg}_mi={mi}.pkl', 'wb') as f:
             pickle.dump(acc_dict, f)
