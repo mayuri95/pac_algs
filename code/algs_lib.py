@@ -405,72 +405,6 @@ def calc_cov_small_gap(d, c, v, eigs):
     multiplier /= (2*v)
     return multiplier*identity
 
-def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
-    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 1.):
-
-    sec_v = max_mi / 2
-    sec_beta = max_mi - sec_v
-    r = calc_r(train_x)
-    gamma = 0.01
-    avg_dist = 0.
-    curr_est = None
-    converged = False
-    curr_trial = 0
-
-    if num_classes is None:
-        num_classes = len(set(train_y))
-
-    assert subsample_rate >= num_classes
-
-    est_y = {}
-    prev_ests = None
-    # 10*c*v
-    seed = np.random.randint(1, 100000)
-
-    while not converged:
-        shuffled_x, shuffled_y = shuffle(train_x, train_y)
-        
-        
-        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
-
-        if mechanism == run_kmeans:
-            output = mechanism(shuffled_x, shuffled_y, num_classes, seed)[1]
-
-        if mechanism == run_svm:
-            output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
-
-        if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
-            assert num_trees is not None
-            assert tree_depth is not None
-            output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
-
-    
-        for ind in range(len(output)):
-            if ind not in est_y:
-                est_y[ind] = []
-            est_y[ind].append(output[ind])
-
-        if curr_trial % 10 == 0:        
-            if prev_ests is None:
-                prev_ests = {}
-                for ind in est_y:
-                    prev_ests[ind] = np.var(est_y[ind])
-            else:
-                converged = True
-                for ind in est_y:
-                    if abs(np.var(est_y[ind]) - prev_ests[ind]) > eta:
-                        converged = False
-                if not converged:
-                    for ind in est_y:
-                        prev_ests[ind] = np.var(est_y[ind])
-        curr_trial += 1
-    fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
-
-    noise = {}
-    sqrt_total_var = sum(fin_var.values())**0.5
-    for ind in fin_var:
-        noise[ind] = 1./max_mi**0.5 * fin_var[ind]**0.5 * sqrt_total_var
-    return noise
 
 
 def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classes,
@@ -497,7 +431,7 @@ def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classe
 
     if proj_matrix is None:
         outputs = []
-        for _ in range(100):
+        for _ in range(5000):
             shuffled_x, shuffled_y = shuffle(train_x, train_y)
             
             
@@ -515,7 +449,7 @@ def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classe
                 output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
 
             outputs.append(output)
-        y_cov = np.cov(np.array(outputs).T)  
+        y_cov = np.cov(np.array(outputs).T)
         
         u, eigs, u_t = np.linalg.svd(y_cov)
         proj_matrix = u
@@ -559,21 +493,14 @@ def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classe
                         prev_ests[ind] = np.var(est_y[ind])
         curr_trial += 1
     fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
-    # print(f"fin_var is {fin_var}")
 
     noise = {}
     sqrt_total_var = sum(fin_var.values())**0.5
+    print(f'sqrt total var is {sqrt_total_var}')
     for ind in fin_var:
         noise[ind] = 1./max_mi**0.5 * fin_var[ind]**0.5 * sqrt_total_var
 
-    sigma_mat = np.zeros((len(est_y), len(est_y)))
-    for ind in fin_var:
-        sigma_mat[ind][ind] = noise[ind]
-
-    noise = np.matmul(
-        np.matmul(u, sigma_mat), u_t)
-    # print(noise.diagonal())
-    return noise
+    return proj_matrix, noise
 
 def det_mechanism_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     eta, regularize=None, max_mi = 1.):
