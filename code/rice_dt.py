@@ -40,7 +40,7 @@ for reg in regularizations:
         print(f'regularize = {reg}, mi = {mi}')
 
         noise = {}
-        est_noise = hybrid_noise_auto(train_x, train_y, fit_forest, subsample_rate, eta=1e-3,
+        est_noise = hybrid_noise_auto(train_x, train_y, fit_forest, subsample_rate, eta=1e-6,
             num_classes = num_classes, max_mi=mi, regularize=reg, num_trees = num_trees, tree_depth=tree_depth)
         noise[reg] = est_noise
         print(f'rice noise {est_noise}')
@@ -70,5 +70,5 @@ for reg in regularizations:
 
 
 
-        with open(f'test_data/rice_acc_auto_s=0.25_reg={reg}_mi={mi}.pkl', 'wb') as f:
+        with open(f'test_data/rice_acc_auto_s=0.5_reg={reg}_mi={mi}.pkl', 'wb') as f:
             pickle.dump(acc_dict, f)

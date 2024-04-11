@@ -405,11 +405,9 @@ def calc_cov_small_gap(d, c, v, eigs):
     multiplier /= (2*v)
     return multiplier*identity
 
+def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 1.):
 
-
-def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classes,
-    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 1., proj_matrix = None):
-    
     sec_v = max_mi / 2
     sec_beta = max_mi - sec_v
     r = calc_r(train_x)
@@ -429,36 +427,10 @@ def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classe
     # 10*c*v
     seed = np.random.randint(1, 100000)
 
-    if proj_matrix is None:
-        outputs = []
-        for _ in range(5000):
-            shuffled_x, shuffled_y = shuffle(train_x, train_y)
-            
-            
-            shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
-
-            if mechanism == run_kmeans:
-                output = mechanism(shuffled_x, shuffled_y, num_classes, seed)[1]
-
-            if mechanism == run_svm:
-                output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
-
-            if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
-                assert num_trees is not None
-                assert tree_depth is not None
-                output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
-
-            outputs.append(output)
-        y_cov = np.cov(np.array(outputs).T)
-        
-        u, eigs, u_t = np.linalg.svd(y_cov)
-        proj_matrix = u
-
-
     while not converged:
         shuffled_x, shuffled_y = shuffle(train_x, train_y)
-        
-        
+
+
         shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
 
         if mechanism == run_kmeans:
@@ -472,11 +444,11 @@ def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classe
             assert tree_depth is not None
             output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
 
-    
+
         for ind in range(len(output)):
             if ind not in est_y:
                 est_y[ind] = []
-            est_y[ind].append(np.matmul(proj_matrix[ind].T, np.array(output).T))
+            est_y[ind].append(output[ind])
 
         if curr_trial % 10 == 0:        
             if prev_ests is None:
@@ -496,11 +468,9 @@ def hybrid_noise_general(train_x, train_y, mechanism, subsample_rate, num_classe
 
     noise = {}
     sqrt_total_var = sum(fin_var.values())**0.5
-    print(f'sqrt total var is {sqrt_total_var}')
     for ind in fin_var:
-        noise[ind] = 1./max_mi**0.5 * fin_var[ind]**0.5 * sqrt_total_var
-
-    return proj_matrix, noise
+        noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
+    return noise
 
 def det_mechanism_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     eta, regularize=None, max_mi = 1.):
@@ -1406,6 +1376,34 @@ def gen_rice(normalize=False):
 
     return train_x, train_y, test_x, test_y, num_classes, train_len
 
+def unpickle(file):
+    import pickle
+    with open(file, 'rb') as fo:
+        dict = pickle.load(fo, encoding='bytes')
+    return dict
+
+def gen_cifar10(normalize=False):
+    fnames = ['code/cifar-10-batches-py/data_batch_{}'.format(i) for i in range(1, 6)]
+    train_x = []
+    train_y = []
+    for f in fnames:
+        data = unpickle(f)
+        train_x.extend(data[b'data'])
+        train_y.extend(data[b'labels'])
+    train_x = np.array(train_x)
+    train_y = np.array(train_y)
+
+    test_data = 'cifar-10-batches-py/test_batch'
+    test_data = unpickle(f)
+    test_x = data[b'data']
+    test_y = data[b'labels']
+    test_x = np.array(test_x)
+    test_y = np.array(test_y)
+    num_classes = 10
+    train_len = train_x.shape[0]
+
+    return train_x, train_y, test_x, test_y, num_classes, train_len
+
 def gen_spam(normalize=False):
     spambase = fetch_ucirepo(id=94) 
     if normalize:
@@ -1434,5 +1432,40 @@ def gen_spam(normalize=False):
     train_y = np.array(y_vec[:train_len])
     test_y = y_vec[train_len+1:]
     num_classes = 2
+
+    return train_x, train_y, test_x, test_y, num_classes, train_len
+
+def gen_bean(normalize=False):
+    # fetch dataset 
+    dry_bean = fetch_ucirepo(id=602) 
+
+    # data (as pandas dataframes) 
+    X = dry_bean.data.features 
+    y = dry_bean.data.targets
+    if normalize:
+        min_max_scaler = preprocessing.MinMaxScaler()
+        scaled = min_max_scaler.fit_transform(dry_bean.data.features)
+        X = pd.DataFrame(scaled)
+    else:
+        X = dry_bean.data.features
+    all_x = X.to_numpy()
+    target_dict = y.to_dict('index')
+    class_names = {'SIRA': 0, 'HOROZ': 1, 'BOMBAY': 2, 'DERMASON': 3, 'SEKER': 4, 'BARBUNYA': 5, 'CALI': 6}
+    y_vec = []
+    max_ind = 13611
+    for ind in range(max_ind):
+        y_vec.append(class_names[target_dict[ind]['Class']])
+
+    y_vec = np.array(y_vec)
+
+    all_x, y_vec = shuffle(all_x, y_vec)
+
+    train_len = int(0.7*max_ind)
+    train_x = all_x[:train_len]
+    test_x = all_x[train_len+1:]
+
+    train_y = np.array(y_vec[:train_len])
+    test_y = y_vec[train_len+1:]
+    num_classes = len(class_names)
 
     return train_x, train_y, test_x, test_y, num_classes, train_len
