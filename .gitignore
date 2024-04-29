@@ -6,3 +6,7 @@ code/data_0120/
 code/test_lr_noise/
 test_data/
 test*
+hybrid_data*/
+figs_final/
+Untitled*
+cifar-10-batches-py/

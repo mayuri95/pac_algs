@@ -406,7 +406,7 @@ def calc_cov_small_gap(d, c, v, eigs):
     return multiplier*identity
 
 def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
-    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 1.):
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
 
     sec_v = max_mi / 2
     sec_beta = max_mi - sec_v
@@ -427,6 +427,8 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     # 10*c*v
     seed = np.random.randint(1, 100000)
 
+    s1 = None # only relevant for PCA
+
     while not converged:
         shuffled_x, shuffled_y = shuffle(train_x, train_y)
 
@@ -444,6 +446,34 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
             assert tree_depth is not None
             output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
 
+
+        if mechanism.__name__ == 'run_pca':
+            assert num_dims is not None
+            output = mechanism(shuffled_x, shuffled_y, num_dims)[1]
+            if s1 is None:
+                s1 = output
+                output = output.flatten()
+            else:
+                s2 = output
+                s_1 = copy.deepcopy(s1)
+                s_2 = copy.deepcopy(s2)
+
+                u_a, s_a, v_a = np.linalg.svd(s_1)
+                u_b, s_b, v_b = np.linalg.svd(s_2)
+
+                c_mat = np.matmul(v_a, np.transpose(v_b))
+
+                end_shape = s2.shape[0]
+                c_trunc = c_mat[:end_shape, :end_shape]
+                transformed_s2 = np.matmul(c_trunc, s2)
+
+                for i in range(len(s2)):
+                    orig_dist = np.linalg.norm(s2[i] - s1[i])
+                    neg_dist = np.linalg.norm(-1*s2[i] - s1[i])
+                    if neg_dist < orig_dist:
+                        s2[i] *= -1
+                s2 = s2.flatten()
+                output = s2
 
         for ind in range(len(output)):
             if ind not in est_y:
@@ -467,7 +497,7 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
 
     noise = {}
-    sqrt_total_var = sum(fin_var.values())**0.5
+    sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
     for ind in fin_var:
         noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
     return noise
@@ -762,7 +792,7 @@ class DecisionTree(object):
         for ind, val in enumerate(possible_splits):
 
             adj_split_val = 0.
-            if weight_orig < 1:
+            if weight_orig < 1 and len(entropies) > 1:
                 num_adj = 0
                 if ind > 0:
                     adj_split_val += entropies[ind-1]
@@ -1383,7 +1413,7 @@ def unpickle(file):
     return dict
 
 def gen_cifar10(normalize=False):
-    fnames = ['code/cifar-10-batches-py/data_batch_{}'.format(i) for i in range(1, 6)]
+    fnames = ['cifar-10-batches-py/data_batch_{}'.format(i) for i in range(1, 6)]
     train_x = []
     train_y = []
     for f in fnames:
