@@ -28,10 +28,15 @@ subsample_rate = int(0.5*train_len)
 
 noise = {}
 mi = 0.5
+C_range = [0.005, 1.0]
 
-est_noise = hybrid_noise_auto(train_x, train_y, run_kmeans, subsample_rate, eta=1e-6,
-    num_classes = num_classes, max_mi=mi)
-noise[mi] = est_noise
-with open(f'hybrid_data/bean_kmeans_hybrid_auto_s=0.5_noise.pkl', 'wb') as f:
+noise = {}
+for C in C_range:
+    print(f"C={C}, mi={mi}")
+    
+    est_noise = hybrid_noise_auto(train_x, train_y, run_svm, subsample_rate, eta=1e-6,
+        num_classes = num_classes, max_mi=mi, regularize=C)
+    noise[C] = est_noise
+    
+with open(f'hybrid_svm/bean_svm_noise.pkl', 'wb') as f:
     pickle.dump(noise, f)
-print('bean noise complete')

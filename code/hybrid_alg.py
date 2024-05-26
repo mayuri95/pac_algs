@@ -21,8 +21,6 @@ from scipy.stats import entropy
 from sklearn import tree
 from sklearn import preprocessing
 from itertools import product
-from imblearn.over_sampling import SMOTE
-
 
 # GET SAMPLES PER CLASS
 def get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate, ordered=False):
@@ -63,11 +61,10 @@ def get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate, ordere
 # NOISE MECHANISMS
 
 def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
-    eta, regularize=None, rebalance = False, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
 
     sec_v = max_mi / 2
     sec_beta = max_mi - sec_v
-    r = calc_r(train_x)
     gamma = 0.01
     avg_dist = 0.
     curr_est = None
@@ -82,7 +79,8 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     est_y = {}
     prev_ests = None
     # 10*c*v
-    seed = 743895091 # randomly generated seed for reproducibility
+    seed = np.random.randint(1, 100000)
+
     s1 = None # only relevant for PCA
 
     while not converged:
@@ -92,7 +90,7 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
         shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
 
         if mechanism == run_kmeans:
-            output = mechanism(shuffled_x, shuffled_y, num_classes, seed, rebalance=rebalance)[1]
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed)[1]
 
         if mechanism == run_svm:
             output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
@@ -137,7 +135,6 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
             est_y[ind].append(output[ind])
 
         if curr_trial % 10 == 0:        
-            print(f'curr trial is {curr_trial}')
             if prev_ests is None:
                 prev_ests = {}
                 for ind in est_y:
@@ -146,7 +143,6 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
                 converged = True
                 for ind in est_y:
                     if abs(np.var(est_y[ind]) - prev_ests[ind]) > eta:
-                        print(f'ind {ind} not converged with dist {abs(np.var(est_y[ind]) - prev_ests[ind])}')
                         converged = False
                 if not converged:
                     for ind in est_y:
@@ -159,74 +155,6 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     for ind in fin_var:
         noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
     return noise, seed
-
-
-def hybrid_noise_mean_ind(train_x, train_y, subsample_rate, num_classes,
-    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
-
-    if num_classes is None:
-        num_classes = len(set(train_y))
-
-    assert subsample_rate >= num_classes
-
-    s1 = None # only relevant for PCA
-    
-    max_noises = {}
-    
-    for ind in range(len(train_x)):
-        print(f"ind = {ind}")
-        curr_est = None
-        converged = False
-        curr_trial = 0
-        est_y = {}
-        prev_ests = None
-
-        removed_train_x = np.delete(train_x, ind, 0)
-        removed_train_y = np.delete(train_y, ind, 0)
-        while not converged:
-            shuffled_x, shuffled_y = shuffle(removed_train_x, removed_train_y)
-
-            shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
-            
-            added_x = copy.deepcopy(shuffled_x)
-            added_y = copy.deepcopy(shuffled_y)
-            added_x[0] = train_x[ind]
-            added_y[0] = train_y[ind]
-
-            output_orig = np.average(shuffled_x, axis=0)
-            output_new = np.average(added_x, axis=0)
-            output = (output_orig - output_new)**2
-
-            for ind in range(len(output)):
-                if ind not in est_y:
-                    est_y[ind] = []
-                est_y[ind].append(output[ind])
-
-            if curr_trial % 10 == 0:
-                print(curr_trial) 
-                if prev_ests is None:
-                    prev_ests = {}
-                    for ind in est_y:
-                        prev_ests[ind] = np.average(est_y[ind])
-                else:
-                    converged = True
-                    for ind in est_y:
-                        if abs(np.average(est_y[ind]) - prev_ests[ind]) > eta:
-                            converged = False
-                    if not converged:
-                        for ind in est_y:
-                            prev_ests[ind] = np.average(est_y[ind])
-            curr_trial += 1
-        fin_var = {ind: np.average(est_y[ind]) for ind in est_y}
-
-        noise = {}
-        sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
-        for ind in fin_var:
-            noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
-        for ind in noise:
-            if ind not in max_noises or max_noises[ind] < noise[ind]:
-                max_noises[ind] = noise[ind]
-    return max_noises
 
 # DECISION TREES 
 
@@ -260,19 +188,14 @@ class DecisionTree(object):
         weight_right = len(y_right) / total_data        
         return weight_left*self.calc_entropy(y_left) + weight_right* self.calc_entropy(y_right)
     
-    def get_left_right(self, x, y, feat, value, include_x = False):
+    def get_left_right(self, x, y, feat, value):
         left, right = [], []
-        xleft, xright = [], []
         for ind, data in enumerate(x):
             if data[feat] < value:
-                xleft.append(data)
                 left.append(y[ind])
             else:
-                xright.append(data)
                 right.append(y[ind])
-        if not include_x:
-            return left, right
-        return xleft, left, xright, right
+        return left, right
 
     def calc_best_split_penalize_norm(self, X, feat, y):
         possible_splits = set([X[i][feat] for i in range(len(X))])
@@ -359,24 +282,6 @@ class DecisionTree(object):
         self.create_tree(left_data, left_y, regularize=regularize, curr_node=curr_node.left)
         self.create_tree(right_data, right_y, regularize = regularize, curr_node=curr_node.right)
         
-    def remake_classes(self, X, y, node=None):
-        if node is None:
-            node = self.root
-        if hasattr(node, 'split_condition'):
-            assert hasattr(node, 'left')
-            assert hasattr(node, 'right')
-            xleft, yleft, xright, yright = self.get_left_right(X, y, node.split_condition[0], node.split_condition[1], include_x=True)
-            self.remake_classes(xleft, yleft, node=node.left)
-            self.remake_classes(xright, yright, node=node.right)
-        else:
-            assert node.terminal == True
-            if len(y) == 0:
-                node.classification_value = 0 # default
-                node.count = len(y)
-            else:
-                node.classification_value = max(set(y), key = y.count)
-                node.count = len(y)
-
     def classify(self, x):
         curr_node = self.root
         while not curr_node.terminal:
@@ -395,7 +300,7 @@ class DecisionTree(object):
                 correct += 1
         return correct / len(X)
 
-    def ordered_traversal(self, node=None, print_tree=False, include_classes=False):
+    def ordered_traversal(self, node=None, print_tree=False):
         all_vals, left_vals, right_vals = [], [], []
         value = []
         if node is None:
@@ -403,30 +308,22 @@ class DecisionTree(object):
         if hasattr(node, 'split_condition'):
             assert hasattr(node, 'left')
             assert hasattr(node, 'right')
-            left_vals = self.ordered_traversal(node.left, print_tree=print_tree, include_classes=include_classes)
+            left_vals = self.ordered_traversal(node.left, print_tree=print_tree)
             feature, value = node.split_condition
             value = [value]
             if print_tree:
-                assert include_classes==True
                 print(f'node at level {node.level} splits on {feature} at {value}')
-            right_vals = self.ordered_traversal(node.right, print_tree=print_tree, include_classes=include_classes)
+            right_vals = self.ordered_traversal(node.right, print_tree=print_tree)
         else:
             assert node.terminal == True
-            if include_classes:
-                value = [node.classification_value]
-            else:
-                value = []
+            value = [node.classification_value]
             if print_tree:
-                assert include_classes == True
                 print(f'classified as {value[0]} with {node.count} elements')
         all_vals.extend(left_vals)
         all_vals.extend(value)
         all_vals.extend(right_vals)
         if node == self.root:
-            if include_classes:
-                assert len(all_vals) == 2**(len(self.ordered_features)+1) - 1
-            else:
-                assert len(all_vals) == 2**(len(self.ordered_features)) - 1
+            assert len(all_vals) == 2**(len(self.ordered_features)+1) - 1
             if print_tree:
                 print('--------')
         return all_vals
@@ -453,17 +350,17 @@ class DecisionTree(object):
                 all_nodes[ind].split_condition = (orig_feat, orig_value + np.random.normal(0, scale=noise))
         return all_nodes
 
-    def add_noise_aniso(self, noise, train_x, train_y, node=None):
+    def add_noise_aniso(self, noise, node=None):
         all_nodes, left_nodes, right_nodes = [], [], []
         value = []
         if node is None:
             node = self.root
         if hasattr(node, 'left'):
-            left_nodes = self.add_noise_aniso(noise, train_x, train_y, node=node.left)
+            left_nodes = self.add_noise_aniso(noise, node.left)
         if hasattr(node, 'split_condition'):
             value = [node]
         if hasattr(node, 'right'):
-            right_nodes = self.add_noise_aniso(noise, train_x, train_y, node=node.right)
+            right_nodes = self.add_noise_aniso(noise, node.right)
         all_nodes.extend(left_nodes)
         all_nodes.extend(value)
         all_nodes.extend(right_nodes)
@@ -473,7 +370,6 @@ class DecisionTree(object):
             for ind in range(len(all_nodes)):
                 orig_feat, orig_value = all_nodes[ind].split_condition
                 all_nodes[ind].split_condition = (orig_feat, orig_value + np.random.normal(0, scale=noise[ind]))
-            #self.remake_classes(train_x, train_y)
         return all_nodes
     
 
@@ -509,9 +405,9 @@ class Forest(object):
             self.trees[i].add_noise(noise)
         return
 
-    def add_noise_aniso(self, noise, x, y):
+    def add_noise_aniso(self, noise):
         for i in range(len(self.trees)):
-            self.trees[i].add_noise_aniso(noise, x, y)
+            self.trees[i].add_noise_aniso(noise)
         return
     
     
@@ -581,20 +477,14 @@ def infer_cluster_labels(model, actual_labels):
 
     return inferred_labels
 
-def run_kmeans(train_x, train_y, num_clusters, seed, weights = None, rebalance = False):
+def run_kmeans(train_x, train_y, num_clusters, seed):
     rand_state = np.random.RandomState(seed)
-    if rebalance:
-        sm = SMOTE(random_state=seed)
-        train_x, train_y = sm.fit_resample(train_x, train_y)
-        model = KMeans(n_clusters=num_clusters, random_state=rand_state,
-                   max_iter = 1000, init='k-means++', n_init=10).fit(train_x)
-    else:
-        model = KMeans(n_clusters=num_clusters, random_state=rand_state, n_init=10).fit(train_x)
+    model = KMeans(n_clusters=num_clusters, random_state=rand_state, n_init="auto").fit(train_x)
+    
     centers = model.cluster_centers_
-
     assert len(centers) == num_clusters
     mapping = infer_cluster_labels(model, train_y)
-
+    
     ordered_centers = []
     new_centers = []
     
@@ -689,72 +579,15 @@ def gen_iris(normalize=False):
     iris_train_samples = 100
     return iris_train_x, iris_train_y, iris_test_x, iris_test_y, iris_num_classes, iris_train_samples
 
-def gen_obesity(normalize=False):
-
-    df = pd.read_csv('obesity.csv')
-
-    df['Gender'].replace(['Female', 'Male'],
-                            [0, 1], inplace=True)
-
-    df['family_history_with_overweight'].replace(['yes', 'no'],
-                            [0, 1], inplace=True)
-
-    df['FAVC'].replace(['yes', 'no'],
-                            [0, 1], inplace=True)
-
-    df['CAEC'].replace(['no', 'Sometimes', 'Frequently', 'Always'],
-                            [0, 1, 2, 3], inplace=True)
-
-    df['SMOKE'].replace(['yes', 'no'],
-                            [0, 1], inplace=True)
-
-    df['SCC'].replace(['yes', 'no'],
-                            [0, 1], inplace=True)
-
-    df['CALC'].replace(['no', 'Sometimes', 'Frequently', 'Always'],
-                            [0, 1, 2, 3], inplace=True)
-
-    df['MTRANS'].replace(['Public_Transportation', 'Walking', 'Automobile', 'Motorbike', 'Bike'],
-                            [0, 1, 2, 3, 4], inplace=True)
-
-    df['NObeyesdad'].replace(['Insufficient_Weight', 'Normal_Weight', 'Overweight_Level_I', 'Overweight_Level_II', 'Obesity_Type_I',
-                              'Obesity_Type_II', 'Obesity_Type_III'],
-                            [0, 0, 1, 1, 2, 2, 2], inplace=True)
-    cols = df.columns
-    if normalize:
-        cols = df.columns[df.columns != 'NObeyesdad']
-        min_max_scaler = preprocessing.MinMaxScaler()
-        df[cols] = min_max_scaler.fit_transform(df[cols])
-
-    mat = df.to_numpy()
-
-    y = mat[:, -1]
-    x = mat[:, :-1]
-
-    all_x, y_vec = shuffle(x, y)
-
-    train_length = int(x.shape[0]*0.8)
-
-    obesity_train_x = all_x[:train_length]
-    obesity_test_x = all_x[train_length+1:]
-
-    obesity_train_y = np.array([int(k) for k in y_vec[:train_length]])
-    obesity_test_y = np.array([int(k) for k in y_vec[train_length+1:]])
-
-    obesity_num_classes = 3
-
-    obesity_train_samples = train_length
-    return obesity_train_x, obesity_train_y, obesity_test_x, obesity_test_y, obesity_num_classes, obesity_train_samples
-
 def gen_rice(normalize=False):
-    X = pd.read_csv('rice_feats.csv')
-    y = pd.read_csv('rice_targets.csv')
+    rice = fetch_ucirepo(id=545)
     if normalize:
         min_max_scaler = preprocessing.MinMaxScaler()
-        scaled = min_max_scaler.fit_transform(X)
+        scaled = min_max_scaler.fit_transform(rice.data.features)
         X = pd.DataFrame(scaled)
     else:
         X = rice.data.features
+    y = rice.data.targets
     all_x = X.to_numpy()
     y_vals = {'Cammeo': 0 , 'Osmancik': 1,}
     target_dict = y.to_dict('index')
@@ -800,48 +633,14 @@ def gen_cifar10(normalize=False):
         min_max_scaler = preprocessing.MinMaxScaler()
         scaled = min_max_scaler.fit_transform(all_x)
         all_x = np.array(pd.DataFrame(scaled))
-#     print(all_x.shape)
     train_x = np.array(all_x[:50000, :])
     test_x = np.array(all_x[50000:, :])
-#     print(train_x.shape)
-#     print(test_x.shape)
     
     train_y = np.array(all_y[:50000])
     test_y = np.array(all_y[50000:])
 
     num_classes = 10
     train_len = train_x.shape[0]
-    return train_x, train_y, test_x, test_y, num_classes, train_len
-
-def gen_spam(normalize=False):
-    spambase = fetch_ucirepo(id=94) 
-    if normalize:
-        min_max_scaler = preprocessing.MinMaxScaler()
-        scaled = min_max_scaler.fit_transform(spambase.data.features)
-        X = pd.DataFrame(scaled)
-    else:
-        X = spambase.data.features
-    y = spambase.data.targets
-    all_x = X.to_numpy()
-    y_vals = {0: 0 , 1: 1,}
-    target_dict = y.to_dict('index')
-    y_vec = []
-    max_ind = 4601
-    for ind in range(max_ind):
-        y_vec.append(y_vals[target_dict[ind]['Class']])
-
-    y_vec = np.array(y_vec)
-
-    all_x, y_vec = shuffle(all_x, y_vec)
-
-    train_len = int(0.7*max_ind)
-    train_x = all_x[:train_len]
-    test_x = all_x[train_len+1:]
-
-    train_y = np.array(y_vec[:train_len])
-    test_y = y_vec[train_len+1:]
-    num_classes = 2
-
     return train_x, train_y, test_x, test_y, num_classes, train_len
 
 def gen_bean(normalize=False):
@@ -905,3 +704,130 @@ def dp_epsilon_to_posterior_success(epsilon):
 
 def dp_ps_to_epsilon(ps):
     return np.log(ps / (1-ps))
+
+def hybrid_noise_mean(train_x, train_y, subsample_rate, num_classes,
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
+
+    sec_v = max_mi / 2
+    sec_beta = max_mi - sec_v
+    r = calc_r(train_x)
+    gamma = 0.01
+    avg_dist = 0.
+    curr_est = None
+    converged = False
+    curr_trial = 0
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+
+    est_y = {}
+    prev_ests = None
+    # 10*c*v
+    seed = np.random.randint(1, 100000)
+
+    s1 = None # only relevant for PCA
+    while not converged:
+        shuffled_x, shuffled_y = shuffle(train_x, train_y)
+        
+        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+        
+        output = np.average(shuffled_x, axis=0)
+
+        for ind in range(len(output)):
+            if ind not in est_y:
+                est_y[ind] = []
+            est_y[ind].append(output[ind])
+
+        if curr_trial % 10 == 0:
+            if curr_trial % 100 == 0:
+                print(f'curr trial is {curr_trial}')
+            if prev_ests is None:
+                prev_ests = {}
+                for ind in est_y:
+                    prev_ests[ind] = np.var(est_y[ind])
+            else:
+                converged = True
+                for ind in est_y:
+                    if abs(np.var(est_y[ind]) - prev_ests[ind]) > eta:
+                        converged = False
+                if not converged:
+                    for ind in est_y:
+                        prev_ests[ind] = np.var(est_y[ind])
+        curr_trial += 1
+    fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
+
+    noise = {}
+    sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
+    for ind in fin_var:
+        noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
+    return noise
+
+
+def hybrid_noise_mean_ind(train_x, train_y, subsample_rate, num_classes,
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+
+    s1 = None # only relevant for PCA
+    
+    max_noises = {}
+    
+    for ind in range(len(train_x)):
+        print(f"ind = {ind}")
+        curr_est = None
+        converged = False
+        curr_trial = 0
+        est_y = {}
+        prev_ests = None
+
+        removed_train_x = np.delete(train_x, ind, 0)
+        removed_train_y = np.delete(train_y, ind, 0)
+        while not converged:
+            shuffled_x, shuffled_y = shuffle(removed_train_x, removed_train_y)
+
+            shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+            
+            added_x = copy.deepcopy(shuffled_x)
+            added_y = copy.deepcopy(shuffled_y)
+            added_x[0] = train_x[ind]
+            added_y[0] = train_y[ind]
+
+            output_orig = np.average(shuffled_x, axis=0)
+            output_new = np.average(added_x, axis=0)
+            output = (output_orig - output_new)**2
+
+            for ind in range(len(output)):
+                if ind not in est_y:
+                    est_y[ind] = []
+                est_y[ind].append(output[ind])
+
+            if curr_trial % 10 == 0:
+                print(curr_trial) 
+                if prev_ests is None:
+                    prev_ests = {}
+                    for ind in est_y:
+                        prev_ests[ind] = np.average(est_y[ind])
+                else:
+                    converged = True
+                    for ind in est_y:
+                        if abs(np.average(est_y[ind]) - prev_ests[ind]) > eta:
+                            converged = False
+                    if not converged:
+                        for ind in est_y:
+                            prev_ests[ind] = np.average(est_y[ind])
+            curr_trial += 1
+        fin_var = {ind: np.average(est_y[ind]) for ind in est_y}
+
+        noise = {}
+        sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
+        for ind in fin_var:
+            noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
+        for ind in noise:
+            if ind not in max_noises or max_noises[ind] < noise[ind]:
+                max_noises[ind] = noise[ind]
+    return max_noises

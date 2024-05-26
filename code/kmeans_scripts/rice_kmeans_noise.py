@@ -22,16 +22,17 @@ from itertools import product
 from algs_lib import *
 import sys
 
-train_x, train_y, test_x, test_y, num_classes, train_len = gen_iris(normalize=True)
+train_x, train_y, test_x, test_y, num_classes, train_len = gen_rice(normalize=True)
 
 subsample_rate = int(0.5*train_len)
 
 noise = {}
 mi = 0.5
 
-est_noise = hybrid_noise_auto(train_x, train_y, run_kmeans, subsample_rate, eta=1e-6,
-    num_classes = num_classes, max_mi=mi)
-noise[mi] = est_noise
-with open(f'hybrid_data/iris_kmeans_hybrid_auto_s=0.5_noise.pkl', 'wb') as f:
-    pickle.dump(noise, f)
-print('iris noise complete')
+for rebalance in [True, False]:
+    est_noise = hybrid_noise_auto(train_x, train_y, run_kmeans, subsample_rate, eta=1e-6,
+        num_classes = num_classes, max_mi=mi, rebalance=rebalance)
+    noise[mi] = est_noise
+    with open(f'hybrid_kmeans/rice_kmeans_hybrid_auto_s=0.5_noise_rebalance={rebalance}.pkl', 'wb') as f:
+        pickle.dump(noise, f)
+print('rice noise complete')

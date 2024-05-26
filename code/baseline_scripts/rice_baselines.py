@@ -71,6 +71,7 @@ baseline_accs['dt'] = {}
 for reg in regs:
     avg_acc = 0
     for i in range(num_trials):
+        print(i)
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
         forest, forest_vec = fit_forest(shuffled_x1, shuffled_y1, num_trees, tree_depth, regularize=reg, seed=None)
