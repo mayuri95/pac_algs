@@ -10,3 +10,9 @@ hybrid_data*/
 figs_final/
 Untitled*
 cifar-10-batches-py/
+hybrid_lr/*
+hybrid_svm/*
+hybrid_kmeans/*
+hybrid_dt/*
+hybrid_pca/*
+hybrid_baseline/*

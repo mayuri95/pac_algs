@@ -31,7 +31,7 @@ mi = 0.5
 
 for rebalance in [True, False]:
     est_noise = hybrid_noise_auto(train_x, train_y, run_kmeans, subsample_rate, eta=1e-6,
-        num_classes = num_classes, max_mi=mi, rebalance=rebalance)
+        num_classes = num_classes, max_mi=mi, rebalance=rebalance, record_ys=True, fname = 'hybrid_kmeans/iris_ys.pkl')
     noise[mi] = est_noise
     with open(f'hybrid_kmeans/iris_kmeans_hybrid_auto_s=0.5_noise_rebalance={rebalance}.pkl', 'wb') as f:
         pickle.dump(noise, f)

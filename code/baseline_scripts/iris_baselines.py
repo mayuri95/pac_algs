@@ -28,7 +28,7 @@ train_x, train_y, test_x, test_y, num_classes, train_len = gen_iris(normalize=Tr
 num_trees = 1
 tree_depth = 3
 
-regs = [(None, 0, 1.0), (0.01, 0.1, 0.95)]
+regs = [(None, 0, 1.0), (0.01, 0.45, 0.8)]
 C_vals = [1.0, 0.05]
 dims = [1, 2]
 
@@ -38,18 +38,21 @@ subsample_rate = train_len
 baseline_accs = {}
 
 
+rebalance = [True, False]
 # K MEANS
-avg_acc = 0
-for i in range(num_trials):
-    shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
-    shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
-    
-    model, cluster_centers = run_kmeans(shuffled_x1, shuffled_y1, num_clusters=num_classes, seed=None)
-    predictions = model.predict(test_x)
-    acc = accuracy_score(test_y, predictions)
-    avg_acc += acc
-avg_acc /= num_trials
-baseline_accs['kmeans'] = avg_acc
+baseline_accs['kmeans'] = {}
+for reb in rebalance:
+    avg_acc = 0
+    for i in range(num_trials):
+        shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
+        shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
+        
+        model, cluster_centers = run_kmeans(shuffled_x1, shuffled_y1, num_clusters=num_classes, seed=None, rebalance=reb)
+        predictions = model.predict(test_x)
+        acc = accuracy_score(test_y, predictions)
+        avg_acc += acc
+    avg_acc /= num_trials
+    baseline_accs['kmeans'][reb] = avg_acc
 
 # SVM
 baseline_accs['svm'] = {}
@@ -95,7 +98,7 @@ for dim in dims:
     avg_acc /= num_trials
     baseline_accs['pca'][dim] = avg_acc
 
-with open('hybrid_data/iris_baselines.pkl', 'wb') as f:
+with open('hybrid_baseline/iris_baselines.pkl', 'wb') as f:
 	pickle.dump(baseline_accs, f)
 
 

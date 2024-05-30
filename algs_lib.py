@@ -63,12 +63,9 @@ def get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate, ordere
 # NOISE MECHANISMS
 
 def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
-    eta, regularize=None, rebalance = False, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
+    eta, regularize=None, rebalance = False, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None,
+    record_ys = False, fname = None):
 
-    sec_v = max_mi / 2
-    sec_beta = max_mi - sec_v
-    r = calc_r(train_x)
-    gamma = 0.01
     avg_dist = 0.
     curr_est = None
     converged = False
@@ -105,7 +102,7 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
 
         if mechanism.__name__ == 'run_pca':
             assert num_dims is not None
-            output = mechanism(shuffled_x, shuffled_y, num_dims)[1]
+            output = mechanism(shuffled_x, shuffled_y, num_dims, seed)[1]
             if s1 is None:
                 s1 = output
                 output = output.flatten()
@@ -158,7 +155,71 @@ def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
     for ind in fin_var:
         noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
+    if record_ys:
+        assert fname is not None
+        with open(fname, 'wb') as f:
+            pickle.dump(est_y, f)
     return noise, seed
+
+def hybrid_noise_mean(train_x, train_y, subsample_rate, num_classes,
+    eta, regularize=None, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None):
+
+    sec_v = max_mi / 2
+    sec_beta = max_mi - sec_v
+    r = calc_r(train_x)
+    gamma = 0.01
+    avg_dist = 0.
+    curr_est = None
+    converged = False
+    curr_trial = 0
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+
+    est_y = {}
+    prev_ests = None
+    # 10*c*v
+    seed = np.random.randint(1, 100000)
+
+    s1 = None # only relevant for PCA
+    while not converged:
+        shuffled_x, shuffled_y = shuffle(train_x, train_y)
+        
+        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+        
+        output = np.average(shuffled_x, axis=0)
+
+        for ind in range(len(output)):
+            if ind not in est_y:
+                est_y[ind] = []
+            est_y[ind].append(output[ind])
+
+        if curr_trial % 10 == 0:
+            if curr_trial % 100 == 0:
+                print(f'curr trial is {curr_trial}')
+            if prev_ests is None:
+                prev_ests = {}
+                for ind in est_y:
+                    prev_ests[ind] = np.var(est_y[ind])
+            else:
+                converged = True
+                for ind in est_y:
+                    if abs(np.var(est_y[ind]) - prev_ests[ind]) > eta:
+                        converged = False
+                if not converged:
+                    for ind in est_y:
+                        prev_ests[ind] = np.var(est_y[ind])
+        curr_trial += 1
+    fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
+
+    noise = {}
+    sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
+    for ind in fin_var:
+        noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
+    return noise
+
 
 
 def hybrid_noise_mean_ind(train_x, train_y, subsample_rate, num_classes,
@@ -650,7 +711,8 @@ def gen_pca_data(x_data, end_dim = 10):
         expanded_pts.append(expanded)
     return np.array(expanded_pts)
 
-def run_pca(train_x, train_y, num_dims):
+def run_pca(train_x, train_y, num_dims, seed):
+    rand_state = np.random.RandomState(seed)
     model = PCA(n_components=num_dims)
     model.fit(train_x)
     return model, model.components_
@@ -746,9 +808,19 @@ def gen_obesity(normalize=False):
     obesity_train_samples = train_length
     return obesity_train_x, obesity_train_y, obesity_test_x, obesity_test_y, obesity_num_classes, obesity_train_samples
 
-def gen_rice(normalize=False):
-    X = pd.read_csv('rice_feats.csv')
-    y = pd.read_csv('rice_targets.csv')
+def gen_rice(normalize=False, use_file = False):
+    if not use_file:
+        rice = fetch_ucirepo(id=545)
+        if normalize:
+            min_max_scaler = preprocessing.MinMaxScaler()
+            scaled = min_max_scaler.fit_transform(rice.data.features)
+            X = pd.DataFrame(scaled)
+        else:
+            X = rice.data.features
+        y = rice.data.targets
+    else:
+        X = pd.read_csv('rice_feats.csv')
+        y = pd.read_csv('rice_targets.csv')
     if normalize:
         min_max_scaler = preprocessing.MinMaxScaler()
         scaled = min_max_scaler.fit_transform(X)

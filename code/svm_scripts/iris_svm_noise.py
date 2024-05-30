@@ -28,14 +28,15 @@ subsample_rate = int(0.5*train_len)
 
 noise = {}
 mi = 0.5
-C_range = [x / 100 for x in range(0, 101, 5)][1:]
+# C_range = [x / 100 for x in range(0, 101, 5)][1:]
+C_range = [0.05, 1.0]
 
 noise = {}
 for C in C_range:
     print(f"C={C}, mi={mi}")
     
     est_noise = hybrid_noise_auto(train_x, train_y, run_svm, subsample_rate, eta=1e-6,
-        num_classes = num_classes, max_mi=mi, regularize=C)
+        num_classes = num_classes, max_mi=mi, regularize=C, record_ys = True, fname = f'hybrid_svm/iris_svm_C={C}_ys.pkl')
     noise[C] = est_noise
     
 with open(f'hybrid_svm/iris_svm_noise.pkl', 'wb') as f:
