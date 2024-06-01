@@ -229,8 +229,6 @@ def hybrid_noise_mean_ind(train_x, train_y, subsample_rate, num_classes,
         num_classes = len(set(train_y))
 
     assert subsample_rate >= num_classes
-
-    s1 = None # only relevant for PCA
     
     max_noises = {}
     
@@ -585,17 +583,6 @@ def fit_decision_tree(X_train, y_train):
     dt = DecisionTree(ordered_feats)
     dt.create_tree(X_train, y_train)
     return dt, dt.ordered_traversal()
-
-def get_ordered_feats(num_feats, num_trees, depth, seed):
-    rng = np.random.default_rng(seed=seed)
-    feats_list = []
-    ordered_feats = list(range(num_feats))
-    assert num_trees >= 1
-    feats_list = [ordered_feats for i in range(num_trees)]
-    
-    feats_list = rng.permuted(feats_list, axis=1)
-    feats_list = feats_list[:, :depth]
-    return feats_list
 
 def fit_forest(train_x, train_y, num_trees, depth, seed, regularize):
     tree_feats = get_ordered_feats(len(train_x[0]), num_trees, depth, seed)

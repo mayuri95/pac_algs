@@ -26,11 +26,13 @@ import sys
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_bean(normalize=True)
 
-C_vals = [1.0, 0.05]
+C_vals = [1.0, 0.005]
 dims = [1, 8]
 
 num_trials = 1000
+seed = 743895091
 subsample_rate = train_len
+
 
 baseline_accs = {}
 
@@ -39,16 +41,19 @@ rebalance = [True, False]
 baseline_accs['kmeans'] = {}
 for reb in rebalance:
     avg_acc = 0
-    for i in range(num_trials):
+    for i in range(1):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
         
-        model, cluster_centers = run_kmeans(shuffled_x1, shuffled_y1, num_clusters=num_classes, seed=None, rebalance=reb)
+        model, cluster_centers = run_kmeans(train_x, train_y, num_clusters=num_classes, seed=seed, rebalance=reb)
         predictions = model.predict(test_x)
         acc = accuracy_score(test_y, predictions)
         avg_acc += acc
-    avg_acc /= num_trials
+    # avg_acc /= num_trials
     baseline_accs['kmeans'][reb] = avg_acc
+
+print(baseline_accs)
+assert(False)
 
 # SVM
 baseline_accs['svm'] = {}
@@ -57,7 +62,7 @@ for C in C_vals:
     for i in range(num_trials):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
-        model, svm_vec = run_svm(shuffled_x1, shuffled_y1, num_classes=num_classes, seed=None,
+        model, svm_vec = run_svm(shuffled_x1, shuffled_y1, num_classes=num_classes, seed=seed,
                                  regularize=C)
         acc = model.score(test_x, test_y)
         avg_acc += acc
@@ -72,7 +77,7 @@ for dim in dims:
     for i in range(num_trials):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = shuffled_x1[:subsample_rate], shuffled_y1[:subsample_rate]
-        model, components = run_pca(shuffled_x1, shuffled_y1, num_dims=dim)
+        model, components = run_pca(shuffled_x1, shuffled_y1, num_dims=dim, seed=seed)
         predictions = model.inverse_transform(model.transform(test_x))
         acc = np.linalg.norm(test_x - predictions)
         acc /= np.linalg.norm(test_x)

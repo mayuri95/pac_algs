@@ -26,7 +26,7 @@ train_x, train_y, test_x, test_y, num_classes, train_len = gen_bean(normalize=Tr
 
 subsample_rate = int(0.5*train_len)
 
-C_range = [x / 100 for x in range(0, 101, 5)][1:]
+C_range = [0.005, 1.0]
 
 mi_range = [4.0, 2.0, 1.0, 0.5, 0.25, 0.125, 0.0625, 0.03125, 0.015625] # default noise is for mi = 0.5
 

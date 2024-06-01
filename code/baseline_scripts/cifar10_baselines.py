@@ -26,10 +26,11 @@ import sys
 
 train_x, train_y, test_x, test_y, num_classes, train_len = gen_cifar10(normalize=True)
 
-dims = [1, 14]
+dims = [1, 3]
 
 num_trials = 1000
 subsample_rate = train_len
+seed = 743895091
 
 baseline_accs = {}
 
@@ -41,7 +42,7 @@ for dim in dims:
     for i in range(num_trials):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = shuffled_x1[:subsample_rate], shuffled_y1[:subsample_rate]
-        model, components = run_pca(shuffled_x1, shuffled_y1, num_dims=dim)
+        model, components = run_pca(shuffled_x1, shuffled_y1, num_dims=dim, seed = seed)
         predictions = model.inverse_transform(model.transform(test_x))
         acc = np.linalg.norm(test_x - predictions)
         acc /= np.linalg.norm(test_x)
@@ -49,7 +50,7 @@ for dim in dims:
     avg_acc /= num_trials
     baseline_accs['pca'][dim] = avg_acc
 
-with open('hybrid_data/cifar10_baselines.pkl', 'wb') as f:
+with open('hybrid_baseline/cifar10_baselines.pkl', 'wb') as f:
 	pickle.dump(baseline_accs, f)
 
 

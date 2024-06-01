@@ -34,6 +34,7 @@ dims = [1, 2]
 
 num_trials = 1000
 subsample_rate = train_len
+seed = 743895091
 
 baseline_accs = {}
 
@@ -47,7 +48,7 @@ for reb in rebalance:
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
         
-        model, cluster_centers = run_kmeans(shuffled_x1, shuffled_y1, num_clusters=num_classes, seed=None, rebalance=reb)
+        model, cluster_centers = run_kmeans(shuffled_x1, shuffled_y1, num_clusters=num_classes, seed=seed, rebalance=reb)
         predictions = model.predict(test_x)
         acc = accuracy_score(test_y, predictions)
         avg_acc += acc
@@ -61,7 +62,7 @@ for C in C_vals:
     for i in range(num_trials):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
-        model, svm_vec = run_svm(shuffled_x1, shuffled_y1, num_classes=num_classes, seed=None,
+        model, svm_vec = run_svm(shuffled_x1, shuffled_y1, num_classes=num_classes, seed=seed,
                                  regularize=C)
         acc = model.score(test_x, test_y)
         avg_acc += acc
@@ -76,7 +77,7 @@ for reg in regs:
     for i in range(num_trials):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
-        forest, forest_vec = fit_forest(shuffled_x1, shuffled_y1, num_trees, tree_depth, regularize=reg, seed=None)
+        forest, forest_vec = fit_forest(shuffled_x1, shuffled_y1, num_trees, tree_depth, regularize=reg, seed=seed)
         acc = forest.calculate_accuracy(test_x, test_y)
         avg_acc += acc
     avg_acc /= num_trials
@@ -90,7 +91,7 @@ for dim in dims:
     for i in range(num_trials):
         shuffled_x1, shuffled_y1 = shuffle(train_x, train_y)
         shuffled_x1, shuffled_y1 = shuffled_x1[:subsample_rate], shuffled_y1[:subsample_rate]
-        model, components = run_pca(shuffled_x1, shuffled_y1, num_dims=dim)
+        model, components = run_pca(shuffled_x1, shuffled_y1, num_dims=dim, seed=seed)
         predictions = model.inverse_transform(model.transform(test_x))
         acc = np.linalg.norm(test_x - predictions)
         acc /= np.linalg.norm(test_x)
