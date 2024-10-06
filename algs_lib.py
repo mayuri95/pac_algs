@@ -62,6 +62,92 @@ def get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate, ordere
 
 # NOISE MECHANISMS
 
+def hybrid_noise_test(train_x, train_y, mechanism, subsample_rate, num_classes,
+    eta, regularize=None, rebalance = False, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None,
+    record_ys = False, fname = None):
+
+    avg_dist = 0.
+    curr_est = None
+    curr_trial = 0
+    num_trials = 1024
+
+    if num_classes is None:
+        num_classes = len(set(train_y))
+
+    assert subsample_rate >= num_classes
+
+    est_y = {}
+    est_x = {}
+    prev_ests = None
+    # 10*c*v
+    seed = 743895091 # randomly generated seed for reproducibility
+    s1 = None # only relevant for PCA
+
+    while curr_trial < num_trials:
+        shuffled_x, shuffled_y = shuffle(train_x, train_y)
+
+
+        shuffled_x, shuffled_y = get_samples_safe(shuffled_x, shuffled_y, num_classes, subsample_rate)
+        est_x[curr_trial] = (shuffled_x, shuffled_y)
+
+        if mechanism == run_kmeans:
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed, rebalance=rebalance)[1]
+
+        if mechanism == run_svm:
+            output = mechanism(shuffled_x, shuffled_y, num_classes, seed, regularize)[1]
+
+        if mechanism.__name__ == 'fit_forest' or mechanism.__name__ == 'fit_gbdt':
+            assert num_trees is not None
+            assert tree_depth is not None
+            output = mechanism(shuffled_x, shuffled_y, num_trees, tree_depth, seed, regularize)[1]
+
+
+        if mechanism.__name__ == 'run_pca':
+            assert num_dims is not None
+            output = mechanism(shuffled_x, shuffled_y, num_dims, seed)[1]
+            if s1 is None:
+                s1 = output
+                output = output.flatten()
+            else:
+                s2 = output
+                s_1 = copy.deepcopy(s1)
+                s_2 = copy.deepcopy(s2)
+
+                u_a, s_a, v_a = np.linalg.svd(s_1)
+                u_b, s_b, v_b = np.linalg.svd(s_2)
+
+                c_mat = np.matmul(v_a, np.transpose(v_b))
+
+                end_shape = s2.shape[0]
+                c_trunc = c_mat[:end_shape, :end_shape]
+                transformed_s2 = np.matmul(c_trunc, s2)
+
+                for i in range(len(s2)):
+                    orig_dist = np.linalg.norm(s2[i] - s1[i])
+                    neg_dist = np.linalg.norm(-1*s2[i] - s1[i])
+                    if neg_dist < orig_dist:
+                        s2[i] *= -1
+                s2 = s2.flatten()
+                output = s2
+
+        for ind in range(len(output)):
+            if ind not in est_y:
+                est_y[ind] = []
+            est_y[ind].append(output[ind])
+
+        curr_trial += 1
+    fin_var = {ind: np.var(est_y[ind]) for ind in est_y}
+
+    noise = {}
+    sqrt_total_var = sum([fin_var[x]**0.5 for x in fin_var])
+    for ind in fin_var:
+        noise[ind] = 1./(2*max_mi) * fin_var[ind]**0.5 * sqrt_total_var
+    if record_ys:
+        assert fname is not None
+        with open(fname, 'wb') as f:
+            pickle.dump(est_y, f)
+    return est_x, noise
+
 def hybrid_noise_auto(train_x, train_y, mechanism, subsample_rate, num_classes,
     eta, regularize=None, rebalance = False, num_trees=None, tree_depth = None, max_mi = 0.5, num_dims = None,
     record_ys = False, fname = None):
@@ -572,7 +658,17 @@ class Forest(object):
         for i in range(len(self.trees)):
             self.trees[i].add_noise_aniso(noise, x, y)
         return
+
+def get_ordered_feats(num_feats, num_trees, depth, seed):
+    rng = np.random.default_rng(seed=seed)
+    feats_list = []
+    ordered_feats = list(range(num_feats))
+    assert num_trees >= 1
+    feats_list = [ordered_feats for i in range(num_trees)]
     
+    feats_list = rng.permuted(feats_list, axis=1)
+    feats_list = feats_list[:, :depth]
+    return feats_list
     
 def fit_decision_tree(X_train, y_train):
     clf = tree.DecisionTreeClassifier(random_state=0)

@@ -29,8 +29,11 @@ train_x, train_y, test_x, test_y, num_classes, train_len = gen_iris(normalize=Tr
 num_features = len(train_x[0])
 
 subsample_rate = int(0.5*train_len)
-num_models = 1000 # num shadow models (256)
+num_models = 5000 # num shadow models (256)
 seed = 743895091
+
+with open(f'data/iris_kmeans_noise_rebalance=False.pkl', 'rb') as f:
+    orig_noise, xs = pickle.load(f)[0.5] # keyed by MI, default is 0.5
 
 for add_noise in [False]:
     for trial_ind in test_vals:
@@ -38,21 +41,16 @@ for add_noise in [False]:
             print(f'trial number {trial_ind}')
             test_ind = trial_ind
 
+            keys = [k for k in xs if trial_ind not in xs[k]]
+            
             # create false dists
             for model_i in range(num_models):
                 if model_i % 100 == 0:
                     print(f'model {model_i}')
-                other_x = np.delete(train_x, test_ind, 0)
-                # print(other_x)
-                other_y = np.delete(train_y, test_ind, 0)
 
-                other_x = copy.deepcopy(other_x)
-                other_y = copy.deepcopy(other_y)
+                choice = np.random.choice(keys)
 
-                shuffled_x1, shuffled_y1 = shuffle(other_x, other_y)
-
-                shuffled_x1, shuffled_y1 = get_samples_safe(shuffled_x1, shuffled_y1, num_classes, subsample_rate)
-
+                shuffled_x1, shuffled_y1 = xs[choice]
                 model, cluster_centers = run_kmeans(shuffled_x1, shuffled_y1, num_clusters=num_classes, seed=seed, rebalance=False)
 
                 cluster_centers = np.array(cluster_centers).reshape((num_classes, -1))
