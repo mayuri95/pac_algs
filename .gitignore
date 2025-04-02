@@ -16,3 +16,7 @@ hybrid_kmeans/*
 hybrid_dt/*
 hybrid_pca/*
 hybrid_baseline/*
+old/*
+noise/*
+old2/*
+final/*

@@ -1,0 +1,38 @@
+Notes on hyperparameters / normalizations
+
+Iris:
+
+- K-Means: Power normalization
+- SVM: 1e-6 power_standard, 1.0 robust
+- DT: (None, 0.0, 1.0) power; (0.01, 0.2, 0.8) robust
+
+Rice:
+
+- K-Means: Standard normalization
+- SVM: 1e-6 power_standard, 1.0 minmax 
+- Decision Tree: (None, 0.0, 1.0) minmax; (0.01, 0.35, 0.51) standard
+
+Dry Bean:
+
+- K-Means: minmax without rebalancing, quantile_gaussian with rebalancing
+- svm: 0.001 standard, 1.0 robust
+- Decision Tree:
+3 trees depth 3: (None, 0.0, 1.0) minmax 
+3 trees depth 5: (0.05, 0.25, 0.65) standard_no_std 
+
+Notes:
+- all PCA algorithms use minmax, all mean estimation algorithms use normalizer
+- Dry Bean cannot use power/power standard norms due to overflow errors
+Norms explored are:
+- standard
+- standard_no_std
+- standard_no_std_no_mean
+- power
+- power_standard
+- minmax
+- quantile
+- quantile_gaussian
+- robust
+- robust_no_scale
+- robust_no_scale_no_center
+- normalizer
